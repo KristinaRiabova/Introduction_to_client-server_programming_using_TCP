@@ -2,13 +2,11 @@
 #include <cstring>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <sys/stat.h>
 #include <dirent.h>
-
-
-
+#include <ctime>
 
 #define BUFFER_SIZE 1024
-
 
 void sendFile(int clientSocket, const char* filename) {
     FILE* file = fopen(filename, "rb");
@@ -50,6 +48,74 @@ void listFiles(int clientSocket, const char* directoryPath) {
         send(clientSocket, error_message, strlen(error_message), 0);
     }
 }
+
+
+void handleClient(int clientSocket) {
+    char buffer[BUFFER_SIZE];
+    memset(buffer, 0, BUFFER_SIZE);
+
+
+    while (true) {
+
+        ssize_t bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
+        if (bytesReceived <= 0) {
+
+            std::cout << "Client disconnected." << std::endl;
+            break;
+        }
+
+        std::cout << "Received from client: " << buffer << std::endl;
+
+
+        std::string command(buffer);
+        size_t spacePos = command.find(' ');
+        std::string action = command.substr(0, spacePos);
+        std::string argument = command.substr(spacePos + 1);
+
+
+        if (action == "GET") {
+            sendFile(clientSocket, argument.c_str());
+        } else if (action == "LIST") {
+            listFiles(clientSocket, argument.c_str());
+        } else if (action == "PUT") {
+
+            const char* success_message = "File uploaded successfully.";
+            send(clientSocket, success_message, strlen(success_message), 0);
+        } else if (action == "DELETE") {
+
+            if (remove(argument.c_str()) == 0) {
+                const char* success_message = "File deleted successfully.";
+                send(clientSocket, success_message, strlen(success_message), 0);
+            } else {
+                const char* error_message = "Error deleting file.";
+                send(clientSocket, error_message, strlen(error_message), 0);
+            }
+        } else if (action == "INFO") {
+
+            struct stat file_stat;
+            if (stat(argument.c_str(), &file_stat) == 0) {
+                std::string info_message = "File size: " + std::to_string(file_stat.st_size) ;
+
+                send(clientSocket, info_message.c_str(), info_message.length(), 0);
+            } else {
+                const char* error_message = "Error retrieving file information.";
+                send(clientSocket, error_message, strlen(error_message), 0);
+            }
+        } else if (action == "EXIT") {
+
+            std::cout << "Client requested to exit. Disconnecting..." << std::endl;
+            break;
+        } else {
+
+            const char* error_message = "Unknown command.";
+            send(clientSocket, error_message, strlen(error_message), 0);
+        }
+
+
+        memset(buffer, 0, BUFFER_SIZE);
+    }
+}
+
 int main() {
 
     int port = 12343;
@@ -96,7 +162,7 @@ int main() {
               << std::endl;
 
 
-
+    handleClient(clientSocket);
 
 
     close(clientSocket);
