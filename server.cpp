@@ -1,12 +1,55 @@
 #include <iostream>
+#include <cstring>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <dirent.h>
+
+
 
 
 #define BUFFER_SIZE 1024
 
 
+void sendFile(int clientSocket, const char* filename) {
+    FILE* file = fopen(filename, "rb");
+    if (!file) {
+        const char* error_message = "File not found.";
+        send(clientSocket, error_message, strlen(error_message), 0);
+        return;
+    }
 
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    rewind(file);
+
+    char* file_buffer = new char[file_size];
+    fread(file_buffer, 1, file_size, file);
+
+    send(clientSocket, file_buffer, file_size, 0);
+
+    fclose(file);
+    delete[] file_buffer;
+}
+
+void listFiles(int clientSocket, const char* directoryPath) {
+    DIR* dir;
+    struct dirent* ent;
+
+    if ((dir = opendir(directoryPath)) != nullptr) {
+        std::string file_list;
+        while ((ent = readdir(dir)) != nullptr) {
+            file_list += ent->d_name;
+            file_list += "\n";
+        }
+
+        closedir(dir);
+
+        send(clientSocket, file_list.c_str(), file_list.length(), 0);
+    } else {
+        const char* error_message = "Unable to open directory.";
+        send(clientSocket, error_message, strlen(error_message), 0);
+    }
+}
 int main() {
 
     int port = 12343;
