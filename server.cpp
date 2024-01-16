@@ -48,7 +48,16 @@ void listFiles(int clientSocket, const char* directoryPath) {
         send(clientSocket, error_message, strlen(error_message), 0);
     }
 }
-
+std::string getFormattedTime(const char* filename) {
+    struct stat file_stat;
+    if (stat(filename, &file_stat) == 0) {
+        struct tm* timeinfo = localtime(&file_stat.st_mtime);
+        char buffer[80];
+        strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo);
+        return std::string(buffer);
+    }
+    return "Error retrieving file information.";
+}
 
 void handleClient(int clientSocket) {
     char buffer[BUFFER_SIZE];
@@ -94,8 +103,8 @@ void handleClient(int clientSocket) {
 
             struct stat file_stat;
             if (stat(argument.c_str(), &file_stat) == 0) {
-                std::string info_message = "File size: " + std::to_string(file_stat.st_size) ;
-
+                std::string info_message = "File size: " + std::to_string(file_stat.st_size) +
+                                           "\nLast modified: " + getFormattedTime(argument.c_str());
                 send(clientSocket, info_message.c_str(), info_message.length(), 0);
             } else {
                 const char* error_message = "Error retrieving file information.";
