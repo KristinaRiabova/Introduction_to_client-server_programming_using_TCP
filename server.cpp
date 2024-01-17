@@ -5,11 +5,16 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <ctime>
-
+#include <fstream>
 #define BUFFER_SIZE 1024
+#define SERVER_FILES_DIRECTORY "server_files"
 
 void sendFile(int clientSocket, const char* filename) {
-    FILE* file = fopen(filename, "rb");
+    std::string serverFilePath = SERVER_FILES_DIRECTORY;
+    serverFilePath += "/";
+    serverFilePath += filename;
+
+    FILE* file = fopen(serverFilePath.c_str(), "rb");
     if (!file) {
         const char* error_message = "File not found.";
         send(clientSocket, error_message, strlen(error_message), 0);
@@ -29,15 +34,31 @@ void sendFile(int clientSocket, const char* filename) {
     delete[] file_buffer;
 }
 
-void listFiles(int clientSocket, const char* directoryPath) {
+void saveFile(const char* filename, const char* file_data, size_t file_size) {
+    std::string serverFilePath = SERVER_FILES_DIRECTORY;
+    serverFilePath += "/";
+    serverFilePath += filename;
+
+    std::ofstream outfile(serverFilePath, std::ios::binary);
+    if (outfile.is_open()) {
+        outfile.write(file_data, file_size);
+        outfile.close();
+    } else {
+        std::cerr << "Error creating file on server: " << serverFilePath << std::endl;
+    }
+}
+
+void listFiles(int clientSocket) {
     DIR* dir;
     struct dirent* ent;
 
-    if ((dir = opendir(directoryPath)) != nullptr) {
+    if ((dir = opendir(SERVER_FILES_DIRECTORY)) != nullptr) {
         std::string file_list;
         while ((ent = readdir(dir)) != nullptr) {
-            file_list += ent->d_name;
-            file_list += "\n";
+            if (ent->d_name[0] != '.') {
+                file_list += ent->d_name;
+                file_list += "\n";
+            }
         }
 
         closedir(dir);
@@ -48,9 +69,15 @@ void listFiles(int clientSocket, const char* directoryPath) {
         send(clientSocket, error_message, strlen(error_message), 0);
     }
 }
+
+
 std::string getFormattedTime(const char* filename) {
+    std::string fullFilePath = SERVER_FILES_DIRECTORY;
+    fullFilePath += "/";
+    fullFilePath += filename;
+
     struct stat file_stat;
-    if (stat(filename, &file_stat) == 0) {
+    if (stat(fullFilePath.c_str(), &file_stat) == 0) {
         struct tm* timeinfo = localtime(&file_stat.st_mtime);
         char buffer[80];
         strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo);
@@ -63,36 +90,46 @@ void handleClient(int clientSocket) {
     char buffer[BUFFER_SIZE];
     memset(buffer, 0, BUFFER_SIZE);
 
-
     while (true) {
-
         ssize_t bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
         if (bytesReceived <= 0) {
-
             std::cout << "Client disconnected." << std::endl;
             break;
         }
 
         std::cout << "Received from client: " << buffer << std::endl;
 
-
         std::string command(buffer);
         size_t spacePos = command.find(' ');
         std::string action = command.substr(0, spacePos);
         std::string argument = command.substr(spacePos + 1);
 
-
         if (action == "GET") {
             sendFile(clientSocket, argument.c_str());
         } else if (action == "LIST") {
-            listFiles(clientSocket, argument.c_str());
+            listFiles(clientSocket);
         } else if (action == "PUT") {
+            recv(clientSocket, buffer, sizeof(buffer), 0);
+            long file_size = std::stol(buffer);
+
+
+            char* file_buffer = new char[file_size];
+            recv(clientSocket, file_buffer, file_size, 0);
+
+
+            saveFile(argument.c_str(), file_buffer, file_size);
 
             const char* success_message = "File uploaded successfully.";
             send(clientSocket, success_message, strlen(success_message), 0);
-        } else if (action == "DELETE") {
 
-            if (remove(argument.c_str()) == 0) {
+            delete[] file_buffer;
+
+        } else if (action == "DELETE") {
+            std::string fullFilePath = SERVER_FILES_DIRECTORY;
+            fullFilePath += "/";
+            fullFilePath += argument;
+
+            if (remove(fullFilePath.c_str()) == 0) {
                 const char* success_message = "File deleted successfully.";
                 send(clientSocket, success_message, strlen(success_message), 0);
             } else {
@@ -100,42 +137,38 @@ void handleClient(int clientSocket) {
                 send(clientSocket, error_message, strlen(error_message), 0);
             }
         } else if (action == "INFO") {
+            std::string fullFilePath = SERVER_FILES_DIRECTORY;
+            fullFilePath += "/";
+            fullFilePath += argument;
 
             struct stat file_stat;
-            if (stat(argument.c_str(), &file_stat) == 0) {
+            if (stat(fullFilePath.c_str(), &file_stat) == 0) {
                 std::string info_message = "File size: " + std::to_string(file_stat.st_size) +
-                                           "\nLast modified: " + getFormattedTime(argument.c_str());
+                                           "\nLast modified: " + getFormattedTime(fullFilePath.c_str());
                 send(clientSocket, info_message.c_str(), info_message.length(), 0);
             } else {
                 const char* error_message = "Error retrieving file information.";
                 send(clientSocket, error_message, strlen(error_message), 0);
             }
         } else if (action == "EXIT") {
-
             std::cout << "Client requested to exit. Disconnecting..." << std::endl;
             break;
         } else {
-
             const char* error_message = "Unknown command.";
             send(clientSocket, error_message, strlen(error_message), 0);
         }
-
 
         memset(buffer, 0, BUFFER_SIZE);
     }
 }
 
 int main() {
-
-    int port = 12343;
-
-
+    int port = 12342;
     int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocket == -1) {
         perror("Error creating socket");
         return 1;
     }
-
 
     sockaddr_in serverAddr{};
     serverAddr.sin_family = AF_INET;
@@ -148,7 +181,6 @@ int main() {
         return 1;
     }
 
-
     if (listen(serverSocket, SOMAXCONN) == -1) {
         perror("Listen failed");
         close(serverSocket);
@@ -156,7 +188,6 @@ int main() {
     }
 
     std::cout << "Server listening on port " << port << std::endl;
-
 
     sockaddr_in clientAddr{};
     socklen_t clientAddrLen = sizeof(clientAddr);
@@ -170,9 +201,7 @@ int main() {
     std::cout << "Accepted connection from " << inet_ntoa(clientAddr.sin_addr) << ":" << ntohs(clientAddr.sin_port)
               << std::endl;
 
-
     handleClient(clientSocket);
-
 
     close(clientSocket);
     close(serverSocket);
