@@ -4,12 +4,12 @@ This communication protocol facilitates interaction between a client and server 
 
 Message Format
 
-The messages exchanged between the client and server have the following format:
-<COMMAND> <ARGUMENT>
 
-<COMMAND>: The command initiated by the client or server (e.g., GET, LIST, PUT, DELETE, INFO, EXIT).
-<ARGUMENT>: An optional argument associated with certain commands (e.g., filename).
+The command initiated by the client or server (e.g., GET, LIST, PUT, DELETE, INFO, EXIT).
+ An optional argument associated with certain commands (e.g., filename).
+
 Message Size
+
 The recommended maximum message size is 1024 bytes, including the command and argument. This ensures efficient communication and helps prevent fragmentation issues.
 
 Commands
