@@ -6,6 +6,9 @@
 #include <dirent.h>
 #include <ctime>
 #include <fstream>
+#include <vector>
+#include <thread>
+#include <mutex>
 
 #define BUFFER_SIZE 1024
 #define SERVER_FILES_DIRECTORY "server_files"
@@ -21,13 +24,15 @@ private:
     void bindSocket();
     void listenForConnections();
     void handleClient(int clientSocket);
-    void sendFile(int clientSocket, const char* filename);
-    void saveFile(const char* filename, const char* file_data, size_t file_size);
-    void listFiles(int clientSocket);
-    std::string getFormattedTime(const char* filename);
+    void sendFile(int clientSocket, const char* clientName, const char* filename);
+    void saveFile(const char* clientName, const char* filename, const char* file_data, size_t file_size);
+    void listFiles(int clientSocket, const char* clientName);
+    std::string getFormattedTime(const char* clientName, const char* filename);
+    std::string createClientDirectory(const char* clientName);
 
     int serverSocket;
     int port;
+    std::mutex mtx;
 };
 
 Server::Server(int port) : port(port) {
@@ -44,18 +49,19 @@ void Server::start() {
     sockaddr_in clientAddr{};
     socklen_t clientAddrLen = sizeof(clientAddr);
 
-    int clientSocket = accept(serverSocket, reinterpret_cast<struct sockaddr*>(&clientAddr), &clientAddrLen);
-    if (clientSocket == -1) {
-        perror("Accept failed");
-        return;
+    while (true) {
+        int clientSocket = accept(serverSocket, reinterpret_cast<struct sockaddr*>(&clientAddr), &clientAddrLen);
+        if (clientSocket == -1) {
+            perror("Accept failed");
+            continue;
+        }
+
+        std::cout << "Accepted connection from " << inet_ntoa(clientAddr.sin_addr) << ":" << ntohs(clientAddr.sin_port)
+                  << std::endl;
+
+        std::thread clientThread(&Server::handleClient, this, clientSocket);
+        clientThread.detach();
     }
-
-    std::cout << "Accepted connection from " << inet_ntoa(clientAddr.sin_addr) << ":" << ntohs(clientAddr.sin_port)
-              << std::endl;
-
-    handleClient(clientSocket);
-
-    close(clientSocket);
 }
 
 int Server::createSocket() {
@@ -90,9 +96,27 @@ void Server::listenForConnections() {
     std::cout << "Server listening on port " << port << std::endl;
 }
 
+
 void Server::handleClient(int clientSocket) {
     char buffer[BUFFER_SIZE];
     memset(buffer, 0, BUFFER_SIZE);
+
+
+    ssize_t nameReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
+    if (nameReceived <= 0) {
+        std::cerr << "Failed to receive client name." << std::endl;
+        close(clientSocket);
+        return;
+    }
+    std::string clientName(buffer);
+
+
+    std::string clientDirectory = createClientDirectory(clientName.c_str());
+    if (clientDirectory.empty()) {
+        std::cerr << "Failed to create or choose client directory for: " << clientName << std::endl;
+        close(clientSocket);
+        return;
+    }
 
     while (true) {
         ssize_t bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
@@ -108,10 +132,13 @@ void Server::handleClient(int clientSocket) {
         std::string action = command.substr(0, spacePos);
         std::string argument = command.substr(spacePos + 1);
 
+
+        std::lock_guard<std::mutex> lock(mtx);
+
         if (action == "GET") {
-            sendFile(clientSocket, argument.c_str());
+            sendFile(clientSocket, clientName.c_str(), argument.c_str());
         } else if (action == "LIST") {
-            listFiles(clientSocket);
+            listFiles(clientSocket, clientName.c_str());
         } else if (action == "PUT") {
             recv(clientSocket, buffer, sizeof(buffer), 0);
             long file_size = std::stol(buffer);
@@ -119,7 +146,7 @@ void Server::handleClient(int clientSocket) {
             char* file_buffer = new char[file_size];
             recv(clientSocket, file_buffer, file_size, 0);
 
-            saveFile(argument.c_str(), file_buffer, file_size);
+            saveFile(clientName.c_str(), argument.c_str(), file_buffer, file_size);
 
             const char* success_message = "File uploaded successfully.";
             send(clientSocket, success_message, strlen(success_message), 0);
@@ -127,6 +154,8 @@ void Server::handleClient(int clientSocket) {
             delete[] file_buffer;
         } else if (action == "DELETE") {
             std::string fullFilePath = SERVER_FILES_DIRECTORY;
+            fullFilePath += "/";
+            fullFilePath += clientName;
             fullFilePath += "/";
             fullFilePath += argument;
 
@@ -140,12 +169,14 @@ void Server::handleClient(int clientSocket) {
         } else if (action == "INFO") {
             std::string fullFilePath = SERVER_FILES_DIRECTORY;
             fullFilePath += "/";
+            fullFilePath += clientName;
+            fullFilePath += "/";
             fullFilePath += argument;
 
             struct stat file_stat;
             if (stat(fullFilePath.c_str(), &file_stat) == 0) {
                 std::string info_message = "File size: " + std::to_string(file_stat.st_size) +
-                                           "\nLast modified: " + getFormattedTime(fullFilePath.c_str());
+                                           "\nLast modified: " + getFormattedTime(clientName.c_str(), argument.c_str());
                 send(clientSocket, info_message.c_str(), info_message.length(), 0);
             } else {
                 const char* error_message = "Error retrieving file information.";
@@ -161,10 +192,14 @@ void Server::handleClient(int clientSocket) {
 
         memset(buffer, 0, BUFFER_SIZE);
     }
+
+    close(clientSocket);
 }
 
-void Server::sendFile(int clientSocket, const char* filename) {
+void Server::sendFile(int clientSocket, const char* clientName, const char* filename) {
     std::string serverFilePath = SERVER_FILES_DIRECTORY;
+    serverFilePath += "/";
+    serverFilePath += clientName;
     serverFilePath += "/";
     serverFilePath += filename;
 
@@ -188,8 +223,10 @@ void Server::sendFile(int clientSocket, const char* filename) {
     delete[] file_buffer;
 }
 
-void Server::saveFile(const char* filename, const char* file_data, size_t file_size) {
+void Server::saveFile(const char* clientName, const char* filename, const char* file_data, size_t file_size) {
     std::string serverFilePath = SERVER_FILES_DIRECTORY;
+    serverFilePath += "/";
+    serverFilePath += clientName;
     serverFilePath += "/";
     serverFilePath += filename;
 
@@ -202,11 +239,15 @@ void Server::saveFile(const char* filename, const char* file_data, size_t file_s
     }
 }
 
-void Server::listFiles(int clientSocket) {
+void Server::listFiles(int clientSocket, const char* clientName) {
+    std::string clientDirectory = SERVER_FILES_DIRECTORY;
+    clientDirectory += "/";
+    clientDirectory += clientName;
+
     DIR* dir;
     struct dirent* ent;
 
-    if ((dir = opendir(SERVER_FILES_DIRECTORY)) != nullptr) {
+    if ((dir = opendir(clientDirectory.c_str())) != nullptr) {
         std::string file_list;
         while ((ent = readdir(dir)) != nullptr) {
             if (ent->d_name[0] != '.') {
@@ -224,9 +265,15 @@ void Server::listFiles(int clientSocket) {
     }
 }
 
-std::string Server::getFormattedTime(const char* filename) {
+std::string Server::getFormattedTime(const char* clientName, const char* filename) {
+    std::string serverFilePath = SERVER_FILES_DIRECTORY;
+    serverFilePath += "/";
+    serverFilePath += clientName;
+    serverFilePath += "/";
+    serverFilePath += filename;
+
     struct stat file_stat;
-    if (stat(filename, &file_stat) == 0) {
+    if (stat(serverFilePath.c_str(), &file_stat) == 0) {
         struct tm* timeinfo = localtime(&file_stat.st_mtime);
         char buffer[80];
         strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo);
@@ -235,8 +282,21 @@ std::string Server::getFormattedTime(const char* filename) {
     return "Error retrieving file information.";
 }
 
+std::string Server::createClientDirectory(const char* clientName) {
+    std::string clientDirectory = SERVER_FILES_DIRECTORY;
+    clientDirectory += "/";
+    clientDirectory += clientName;
+
+    if (mkdir(clientDirectory.c_str(), 0777) == -1) {
+
+        return clientDirectory;
+    }
+
+    return clientDirectory;
+}
+
 int main() {
-    int port = 12341;
+    int port = 12348;
     Server server(port);
     server.start();
 
