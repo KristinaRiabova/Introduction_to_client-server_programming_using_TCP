@@ -86,3 +86,6 @@ Server Response: Information about the specified file.
 Client Request: EXIT
 
 Server Response: No response needed. The server will terminate the connection.
+
+
+![image](https://github.com/KristinaRiabova/Introduction_to_client-server_programming_using_TCP/assets/103763577/e061b847-11d1-4460-9cfe-c8b793a86fcd)
