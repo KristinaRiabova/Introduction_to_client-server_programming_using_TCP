@@ -21,7 +21,7 @@ void saveFile(const char* filename, const char* file_data, size_t file_size) {
 
 class Client {
 public:
-    Client(const char* serverIp, int port);
+    Client(const char* serverIp, int port, const char* clientName);
     ~Client();
     void start();
 
@@ -35,11 +35,15 @@ private:
     int clientSocket;
     const char* serverIp;
     int port;
+    const char* clientName;
 };
 
-Client::Client(const char* serverIp, int port) : serverIp(serverIp), port(port) {
+Client::Client(const char* serverIp, int port, const char* clientName) : serverIp(serverIp), port(port), clientName(clientName) {
     clientSocket = createSocket();
     connectToServer();
+
+
+    send(clientSocket, clientName, strlen(clientName), 0);
 }
 
 Client::~Client() {
@@ -48,7 +52,7 @@ Client::~Client() {
 
 void Client::start() {
     while (true) {
-        std::cout << "Enter command (e.g., GET <filename>, LIST, PUT <filename>, DELETE <filename>, INFO <filename>, EXIT): ";
+        std::cout << "Enter command (GET <filename>, LIST, PUT <filename>, DELETE <filename>, INFO <filename>, EXIT): ";
         std::string userInput;
         std::getline(std::cin, userInput);
 
@@ -66,7 +70,7 @@ void Client::start() {
             ssize_t bytesReceived = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
 
             if (bytesReceived > 0) {
-                if (strncmp(buffer, "File not found", strlen("File is empty")) == 0) {
+                if (strncmp(buffer, "File not found", strlen("File not found")) == 0) {
                     std::cout << "File not found on the server: " << userInput.substr(4) << std::endl;
                 } else if (userInput.substr(0, 3) == "GET") {
                     saveFile(userInput.substr(4).c_str(), buffer, bytesReceived);
@@ -135,14 +139,12 @@ void Client::sendFile(const std::string& filename) {
     }
 }
 
-
-
-
 int main() {
     const char* serverIp = "127.0.0.1";
-    int port = 12341;
+    int port = 12348;
+    const char* clientName = "client1";
 
-    Client client(serverIp, port);
+    Client client(serverIp, port, clientName);
     client.start();
 
     return 0;
