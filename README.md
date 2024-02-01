@@ -2,47 +2,87 @@ Protocol Overview
 
 This communication protocol facilitates interaction between a client and server for a simple file transfer application over TCP. The protocol defines a set of commands, their formats, and the expected responses.
 
-Message Format
+Request Messages from Client to Server:
+GET <filename>:
 
+The client sends a request to the server to retrieve the content of the specified file.
+Example: GET file.txt
+The server responds with the content of the file or a message indicating that the file was not found.
+LIST:
 
-The command initiated by the client or server (e.g., GET, LIST, PUT, DELETE, INFO, EXIT).
- An optional argument associated with certain commands (e.g., filename).
+The client requests the server to provide a list of files available for the client.
+No additional arguments are needed.
+The server responds with a list of filenames or an error message if listing files fails.
+PUT <filename>:
 
-Message Size
+The client sends a request to the server to upload a file with the specified filename.
+Example: PUT file.txt
+The server expects the client to follow up with the file content.
+After successful upload, the server responds with a success message.
+DELETE <filename>:
 
-The recommended maximum message size is 1024 bytes, including the command and argument. This ensures efficient communication and helps prevent fragmentation issues.
+The client requests the server to delete the specified file.
+Example: DELETE file.txt
+The server deletes the file and responds with a success message or an error message if deletion fails.
+INFO <filename>:
 
-Commands
+The client requests information about the specified file, such as its size and last modified time.
+Example: INFO file.txt
+The server responds with the requested information or an error message if information retrieval fails.
+EXIT:
 
-GET <filename>
+The client requests to terminate the connection and exit the application.
+No additional arguments are needed.
+The server acknowledges the request and closes the connection gracefully.
+Response Messages from Server to Client:
+File Content:
 
-Client to Server: Requests a specific file from the server.
-Server to Client: Sends the requested file content.
+Response to a GET request containing the content of the requested file.
+The server sends the content of the file or a message indicating that the file was not found.
+List of Files:
 
-LIST
+Response to a LIST request containing a list of files available for the client.
+The server sends a list of filenames or an error message if listing files fails.
+Success Message:
 
-Client to Server: Requests a list of available files on the server.
-Server to Client: Sends a list of files in the server directory.
+Response to successful operations like PUT, DELETE, and others.
+The server sends a message indicating the success of the operation.
+Error Message:
 
-PUT <filename>
+Response to indicate errors occurred during operations.
+The server sends an error message with details about the encountered error.
+File Not Found:
 
-Client to Server: Uploads a file to the server.
-Server to Client: Sends a confirmation message.
+Response to indicate that the requested file does not exist on the server.
+The server informs the client that the requested file is not available.
+File Information:
 
-DELETE <filename>
+Response to an INFO request containing information about the specified file.
+The server provides information such as file size and last modified time or an error message.
+Message Format:
+Each message is terminated by a newline character ('\n') or any other agreed-upon delimiter.
+Messages consist of command strings followed by optional arguments, separated by spaces.
+Example Communication:
+Client Request: GET file.txt
 
-Client to Server: Requests the server to delete a specific file.
-Server to Client: Sends a confirmation or an error message.
+Server Response: File content of file.txt or "File not found" message.
 
-INFO <filename>
+Client Request: LIST
 
-Client to Server: Requests information about a specific file (e.g., size, last modified).
-Server to Client: Sends information about the requested file.
+Server Response: List of available files on the server.
 
-EXIT
+Client Request: PUT new_file.txt
 
-Client to Server: Requests to terminate the connection gracefully.
-Server to Client: Acknowledges the request and disconnects the client.
+Server Response: Success message or error message.
 
-Error Handling
-If a command is not recognized or an error occurs during command processing, the server responds with an error message.
+Client Request: DELETE file.txt
+
+Server Response: Success message or error message.
+
+Client Request: INFO file.txt
+
+Server Response: Information about the specified file.
+
+Client Request: EXIT
+
+Server Response: No response needed. The server will terminate the connection.
