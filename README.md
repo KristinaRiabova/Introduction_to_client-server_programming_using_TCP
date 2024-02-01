@@ -87,5 +87,8 @@ Client Request: EXIT
 
 Server Response: No response needed. The server will terminate the connection.
 
-
+SEQUENCE DIAGRAM
 ![image](https://github.com/KristinaRiabova/Introduction_to_client-server_programming_using_TCP/assets/103763577/e061b847-11d1-4460-9cfe-c8b793a86fcd)
+CASE DIAGRAM 
+![image](https://github.com/KristinaRiabova/Introduction_to_client-server_programming_using_TCP/assets/103763577/f86980e5-c78e-4544-a17d-83f7e33e8684)
+
